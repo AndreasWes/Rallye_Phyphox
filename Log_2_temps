@@ -1,0 +1,157 @@
+#include <BLEDevice.h>
+#include <BLEServer.h>
+#include <BLEUtils.h>
+#include <BLE2902.h>
+#include <phyphoxBle.h> 
+#include <Wire.h>
+#include "Adafruit_MCP9601.h"
+#include <Adafruit_GFX.h>
+#include <Adafruit_MLX90614.h>
+//RR mcp4 67
+#define I2C_ADDRESS1 (0x67)
+#define temp_alert1 100
+#define temp_alert2 300
+#define temp_alert3 400
+#define temp_alert4 500
+
+//BLE server name
+#define bleServerName "TempControl"
+Adafruit_MLX90614 mlx = Adafruit_MLX90614();
+Adafruit_MCP9601 mcp1;
+
+
+uint16_t temp;
+// Timer variables
+unsigned long lastTime = 0;
+unsigned long timerDelay = 30000;
+
+bool deviceConnected = false;
+
+// See the following for generating UUIDs:
+// https://www.uuidgenerator.net/
+#define SERVICE_UUID "0ef187e8-eb07-45d3-9a5a-0c736f917661"
+
+
+// Temperature Characteristic and Descriptor
+BLECharacteristic TemperatureCharacteristics("813b7a91-c7ef-47fd-844e-dc28ffdf9dfe", BLECharacteristic::PROPERTY_NOTIFY);
+BLEDescriptor bmeTemperatureDescriptor(BLEUUID((uint16_t)0x2902));
+
+//Setup callbacks onConnect and onDisconnect
+class MyServerCallbacks: public BLEServerCallbacks {
+  void onConnect(BLEServer* pServer) {
+    deviceConnected = true;
+  };
+  void onDisconnect(BLEServer* pServer) {
+    deviceConnected = false;
+  }
+
+};
+
+// ... //
+
+
+void setup()
+{  
+Serial.begin(9600);
+
+
+// Create the BLE Device
+BLEDevice::init(bleServerName);
+
+// Create the BLE Server
+BLEServer *pServer = BLEDevice::createServer();
+pServer->setCallbacks(new MyServerCallbacks());
+
+// Create the BLE Service
+BLEService *bmeService = pServer->createService(SERVICE_UUID);
+
+// Create BLE Characteristics and Create a BLE Descriptor
+// Temperature
+bmeService->addCharacteristic(&TemperatureCharacteristics);
+bmeTemperatureDescriptor.setValue("IR Temperature Celsius");
+TemperatureCharacteristics.addDescriptor(&bmeTemperatureDescriptor);
+  
+// Start the service
+bmeService->start();
+
+// Start advertising
+BLEAdvertising *pAdvertising = BLEDevice::getAdvertising();
+pAdvertising->addServiceUUID(SERVICE_UUID);
+pServer->getAdvertising()->start();
+Serial.println("Waiting a client connection to notify...");
+
+mlx.begin();
+/* Initialise the driver with I2C_ADDRESS and the default I2C bus. */
+if (! mcp1.begin(I2C_ADDRESS1)) {
+    Serial.println("Sensor not found. Check wiring!");
+    while (1);
+    }
+
+  Serial.println("Found MCP9601!");
+
+  mcp1.setADCresolution(MCP9600_ADCRESOLUTION_18);
+  Serial.print("ADC resolution set to ");
+  switch (mcp1.getADCresolution()) {
+    case MCP9600_ADCRESOLUTION_18:   Serial.print("18"); break;
+    case MCP9600_ADCRESOLUTION_16:   Serial.print("16"); break;
+    case MCP9600_ADCRESOLUTION_14:   Serial.print("14"); break;
+    case MCP9600_ADCRESOLUTION_12:   Serial.print("12"); break;
+  }
+  Serial.println(" bits");
+
+  mcp1.setThermocoupleType(MCP9600_TYPE_N);
+  Serial.print("Thermocouple type set to ");
+  switch (mcp1.getThermocoupleType()) {
+    case MCP9600_TYPE_K:  Serial.print("K"); break;
+    case MCP9600_TYPE_J:  Serial.print("J"); break;
+    case MCP9600_TYPE_T:  Serial.print("T"); break;
+    case MCP9600_TYPE_N:  Serial.print("N"); break;
+    case MCP9600_TYPE_S:  Serial.print("S"); break;
+    case MCP9600_TYPE_E:  Serial.print("E"); break;
+    case MCP9600_TYPE_B:  Serial.print("B"); break;
+    case MCP9600_TYPE_R:  Serial.print("R"); break;
+  }
+  Serial.println(" type");
+
+  mcp1.setFilterCoefficient(0);
+  Serial.print("Filter coefficient value set to: ");
+  Serial.println(mcp1.getFilterCoefficient());
+
+  mcp1.setAlertTemperature(1, temp_alert1);
+  Serial.print("Alert #1 temperature set to ");
+  Serial.println(mcp1.getAlertTemperature(1));
+  mcp1.configureAlert(1, true, true, false, true, true);  // alert 1, enabled, rising temp, cold junction,high on alert 
+
+  mcp1.setAlertTemperature(2, temp_alert2);
+  Serial.print("Alert #1 temperature set to ");
+  Serial.println(mcp1.getAlertTemperature(1));
+  mcp1.configureAlert(2, true, true, false, true, true);  // alert 1, enabled, rising temp, cold junction,high on alert 
+
+  mcp1.setAlertTemperature(3, temp_alert3);
+  Serial.print("Alert #1 temperature set to ");
+  Serial.println(mcp1.getAlertTemperature(1));
+  mcp1.configureAlert(3, true, true, false, true, true);  // alert 1, enabled, rising temp, cold junction,high on alert 
+
+  mcp1.setAlertTemperature(4, temp_alert4);
+  Serial.print("Alert #1 temperature set to ");
+  Serial.println(mcp1.getAlertTemperature(1));
+  mcp1.configureAlert(3, true, true, false, true, true);  // alert 1, enabled, rising temp, cold junction,high on alert 
+ 
+  mcp1.enable(true);
+
+  Serial.println(F("------------------------------"));
+ 
+}
+
+void loop()
+ {
+// Read temperature as Celsius (the default)
+uint16_t temp = mcp1.readThermocouple();
+//Notify temperature reading from BME sensor
+//Set temperature Characteristic value and notify connected client
+TemperatureCharacteristics.setValue(temp);
+TemperatureCharacteristics.notify();
+Serial.println(mlx.readObjectTempC());
+Serial.println(mcp1.readThermocouple());
+delay(50);
+}
